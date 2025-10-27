@@ -201,7 +201,9 @@ const Auth = () => {
     <div className="min-h-screen bg-background flex items-center justify-center px-6">
       <div className="w-full max-w-md space-y-8">
         <div className="flex flex-col items-center space-y-4">
-          <WalletIcon />
+          <button onClick={() => navigate("/")} className="focus:outline-none focus:ring-2 focus:ring-primary rounded-2xl">
+            <WalletIcon />
+          </button>
           <div className="space-y-2 text-center">
             <h1 className="text-3xl font-bold text-foreground">
               Bem-vindo de volta
