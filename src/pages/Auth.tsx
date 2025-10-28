@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +13,7 @@ const Auth = () => {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
   
   const [formData, setFormData] = useState({
     fullName: "",
@@ -20,27 +22,67 @@ const Auth = () => {
     confirmPassword: "",
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    checkUser();
+  }, []);
+
+  const checkUser = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (session) {
+      navigate("/dashboard");
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (mode === "register") {
-      if (formData.password !== formData.confirmPassword) {
-        toast.error("As palavras-passe não coincidem");
-        return;
+    setLoading(true);
+
+    try {
+      if (mode === "register") {
+        if (formData.password !== formData.confirmPassword) {
+          toast.error("As palavras-passe não coincidem");
+          setLoading(false);
+          return;
+        }
+        if (!formData.email || !formData.password) {
+          toast.error("Por favor, preencha todos os campos");
+          setLoading(false);
+          return;
+        }
+
+        const { error } = await supabase.auth.signUp({
+          email: formData.email,
+          password: formData.password,
+        });
+
+        if (error) throw error;
+
+        toast.success("Conta criada com sucesso!");
+        navigate("/dashboard");
+      } else {
+        if (!formData.email || !formData.password) {
+          toast.error("Por favor, preencha todos os campos");
+          setLoading(false);
+          return;
+        }
+
+        const { error } = await supabase.auth.signInWithPassword({
+          email: formData.email,
+          password: formData.password,
+        });
+
+        if (error) throw error;
+
+        toast.success("Login efetuado com sucesso!");
+        navigate("/dashboard");
       }
-      if (!formData.fullName || !formData.email || !formData.password) {
-        toast.error("Por favor, preencha todos os campos");
-        return;
-      }
-      toast.success("Conta criada com sucesso!");
-      // Navigate to dashboard or home after successful registration
-    } else {
-      if (!formData.email || !formData.password) {
-        toast.error("Por favor, preencha todos os campos");
-        return;
-      }
-      toast.success("Login efetuado com sucesso!");
-      // Navigate to dashboard or home after successful login
+    } catch (error: any) {
+      console.error("Auth error:", error);
+      toast.error(error.message || "Ocorreu um erro. Tente novamente.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -176,8 +218,12 @@ const Auth = () => {
                 .
               </p>
 
-              <Button type="submit" className="w-full h-12 text-base font-semibold">
-                Registar
+              <Button
+                type="submit"
+                className="w-full h-12 text-base font-semibold"
+                disabled={loading}
+              >
+                {loading ? "A criar conta..." : "Registar"}
               </Button>
 
               <p className="text-center text-sm text-muted-foreground">
@@ -265,8 +311,12 @@ const Auth = () => {
             </a>
           </div>
 
-          <Button type="submit" className="w-full h-12 text-base font-semibold">
-            Iniciar Sessão
+          <Button
+            type="submit"
+            className="w-full h-12 text-base font-semibold"
+            disabled={loading}
+          >
+            {loading ? "A iniciar sessão..." : "Iniciar Sessão"}
           </Button>
 
           <div className="relative">
