@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -42,25 +42,12 @@ const Budgets = () => {
   const currentYear = currentDate.getFullYear();
 
   useEffect(() => {
-    checkAuth();
     loadCategories();
     loadBudgets();
   }, []);
 
-  const checkAuth = async () => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (!session) {
-      navigate("/auth");
-    }
-  };
-
   const loadCategories = async () => {
-    const { data, error } = await supabase
-      .from("categories")
-      .select("*")
-      .order("name");
+    const { data, error } = await api.categories.getAll();
 
     if (error) {
       console.error("Error loading categories:", error);
@@ -70,11 +57,10 @@ const Budgets = () => {
   };
 
   const loadBudgets = async () => {
-    const { data, error } = await supabase
-      .from("budgets")
-      .select("*, categories(*)")
-      .eq("month", currentMonth)
-      .eq("year", currentYear);
+    const { data, error } = await api.budgets.getAll({
+      month: currentMonth,
+      year: currentYear
+    });
 
     if (error) {
       console.error("Error loading budgets:", error);
@@ -100,18 +86,7 @@ const Budgets = () => {
 
     setLoading(true);
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      toast.error("Utilizador não autenticado");
-      setLoading(false);
-      return;
-    }
-
-    const { error } = await supabase.from("budgets").insert({
-      user_id: user.id,
+    const { error } = await api.budgets.create({
       category_id: selectedCategory,
       amount: parseFloat(amount),
       month: currentMonth,
@@ -132,7 +107,7 @@ const Budgets = () => {
   };
 
   const handleDeleteBudget = async (budgetId: string) => {
-    const { error } = await supabase.from("budgets").delete().eq("id", budgetId);
+    const { error } = await api.budgets.delete(budgetId);
 
     if (error) {
       console.error("Error deleting budget:", error);

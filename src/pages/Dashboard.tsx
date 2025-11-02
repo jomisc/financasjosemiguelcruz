@@ -1,12 +1,39 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Plus, LogOut, TrendingUp, TrendingDown, Wallet } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Plus, TrendingUp, TrendingDown, Wallet, Pencil, Trash2, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import WalletIcon from "@/components/WalletIcon";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface Category {
   id: string;
@@ -35,101 +62,63 @@ interface Transaction {
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [totalIncome, setTotalIncome] = useState(0);
   const [totalExpenses, setTotalExpenses] = useState(0);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<string | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [editFormData, setEditFormData] = useState({
+    type: "expense" as "income" | "expense",
+    amount: "",
+    category_id: "",
+    date: "",
+    description: "",
+  });
 
   useEffect(() => {
-    checkUser();
+    loadData();
+    loadCategories();
   }, []);
-
-  const checkUser = async () => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    if (!session) {
-      navigate("/auth");
-      return;
-    }
-
-    setUser(session.user);
-    await initializeUserData(session.user.id);
-    await loadData();
-    setLoading(false);
-  };
-
-  const initializeUserData = async (userId: string) => {
-    // Check if user has categories
-    const { data: categories } = await supabase
-      .from("categories")
-      .select("*")
-      .eq("user_id", userId);
-
-    // If no categories, create default ones
-    if (!categories || categories.length === 0) {
-      const { error } = await supabase.rpc("create_default_categories", {
-        _user_id: userId,
-      });
-
-      if (error) {
-        console.error("Error creating default categories:", error);
-      }
-    }
-  };
 
   const loadData = async () => {
     const currentDate = new Date();
     const currentMonth = currentDate.getMonth() + 1;
     const currentYear = currentDate.getFullYear();
 
-    // Load budgets for current month
-    const { data: budgetsData, error: budgetsError } = await supabase
-      .from("budgets")
-      .select("*, categories(*)")
-      .eq("month", currentMonth)
-      .eq("year", currentYear);
+    try {
+      // Use the dashboard stats endpoint for optimized data loading
+      const { data: statsData, error: statsError } = await api.dashboard.getStats();
 
-    if (budgetsError) {
-      console.error("Error loading budgets:", budgetsError);
-    } else {
-      setBudgets(budgetsData || []);
-    }
+      if (statsError) {
+        console.error("Error loading dashboard stats:", statsError);
+        toast.error("Erro ao carregar dados do dashboard");
+      } else if (statsData) {
+        setTotalIncome(statsData.income);
+        setTotalExpenses(statsData.expenses);
+        setBudgets(statsData.budgets || []);
+      }
 
-    // Load transactions for current month
-    const firstDayOfMonth = new Date(currentYear, currentMonth - 1, 1)
-      .toISOString()
-      .split("T")[0];
-    const lastDayOfMonth = new Date(currentYear, currentMonth, 0)
-      .toISOString()
-      .split("T")[0];
+      // Load recent transactions
+      const { data: transactionsData, error: transactionsError } = await api.transactions.getAll({
+        limit: 10
+      });
 
-    const { data: transactionsData, error: transactionsError } = await supabase
-      .from("transactions")
-      .select("*, categories(*)")
-      .gte("date", firstDayOfMonth)
-      .lte("date", lastDayOfMonth)
-      .order("date", { ascending: false });
-
-    if (transactionsError) {
-      console.error("Error loading transactions:", transactionsError);
-    } else {
-      setTransactions(transactionsData || []);
-
-      // Calculate totals
-      const income = transactionsData
-        ?.filter((t) => t.type === "income")
-        .reduce((sum, t) => sum + parseFloat(t.amount.toString()), 0) || 0;
-
-      const expenses = transactionsData
-        ?.filter((t) => t.type === "expense")
-        .reduce((sum, t) => sum + parseFloat(t.amount.toString()), 0) || 0;
-
-      setTotalIncome(income);
-      setTotalExpenses(expenses);
+      if (transactionsError) {
+        console.error("Error loading transactions:", transactionsError);
+        toast.error("Erro ao carregar actividades");
+      } else {
+        setTransactions(transactionsData || []);
+      }
+    } catch (error) {
+      console.error("Error loading dashboard data:", error);
+      toast.error("Erro ao carregar dados");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -149,9 +138,83 @@ const Dashboard = () => {
     return "bg-primary";
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    navigate("/");
+  const loadCategories = async () => {
+    const { data, error } = await api.categories.getAll();
+
+    if (error) {
+      console.error("Error loading categories:", error);
+      toast.error("Erro ao carregar categorias");
+    } else {
+      setCategories(data || []);
+    }
+  };
+
+  const handleDeleteTransaction = async () => {
+    if (!selectedTransaction) return;
+
+    const { error } = await api.transactions.delete(selectedTransaction);
+
+    if (error) {
+      console.error("Error deleting transaction:", error);
+      toast.error("Erro ao eliminar actividade");
+    } else {
+      toast.success("Actividade eliminada com sucesso");
+      loadData();
+    }
+
+    setDeleteDialogOpen(false);
+    setSelectedTransaction(null);
+  };
+
+  const handleEditTransaction = (transaction: Transaction) => {
+    setEditingTransaction(transaction);
+    setEditFormData({
+      type: transaction.type as "income" | "expense",
+      amount: transaction.amount.toString(),
+      category_id: transaction.category_id || "",
+      date: transaction.date.split('T')[0],
+      description: transaction.description || "",
+    });
+    setEditDialogOpen(true);
+  };
+
+  const handleUpdateTransaction = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!editingTransaction) return;
+
+    if (!editFormData.description || editFormData.description.trim() === "") {
+      toast.error("Por favor, insira uma descrição");
+      return;
+    }
+
+    if (!editFormData.amount || parseFloat(editFormData.amount) <= 0) {
+      toast.error("Por favor, insira um valor válido");
+      return;
+    }
+
+    if (!editFormData.category_id && editFormData.type === "expense") {
+      toast.error("Por favor, selecione uma categoria");
+      return;
+    }
+
+    const { error } = await api.transactions.update(editingTransaction.id, {
+      type: editFormData.type,
+      amount: parseFloat(editFormData.amount),
+      category_id: editFormData.type === "expense" ? editFormData.category_id : null,
+      date: editFormData.date,
+      description: editFormData.description,
+    });
+
+    if (error) {
+      console.error("Error updating transaction:", error);
+      toast.error("Erro ao atualizar actividade");
+    } else {
+      toast.success("Actividade atualizada com sucesso!");
+      setEditDialogOpen(false);
+      setEditingTransaction(null);
+      loadData();
+    }
   };
 
   if (loading) {
@@ -176,10 +239,6 @@ const Dashboard = () => {
             <WalletIcon className="w-8 h-8" />
             <h1 className="text-xl font-bold text-foreground">Finanças+</h1>
           </button>
-          <Button variant="ghost" size="sm" onClick={handleLogout}>
-            <LogOut className="w-4 h-4 mr-2" />
-            Sair
-          </Button>
         </div>
       </header>
 
@@ -236,7 +295,7 @@ const Dashboard = () => {
             size="lg"
           >
             <Plus className="w-5 h-5 mr-2" />
-            Nova Transação
+            Nova Actividade
           </Button>
           <Button
             onClick={() => navigate("/budgets")}
@@ -309,14 +368,14 @@ const Dashboard = () => {
         {transactions.length > 0 && (
           <Card className="mt-8">
             <CardHeader>
-              <CardTitle>Transações Recentes</CardTitle>
+              <CardTitle>Actividades Recentes</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
                 {transactions.slice(0, 5).map((transaction) => (
                   <div
                     key={transaction.id}
-                    className="flex items-center justify-between pb-4 border-b border-border last:border-0 last:pb-0"
+                    className="flex items-center justify-between pb-4 border-b border-border last:border-0 last:pb-0 p-2"
                   >
                     <div className="flex items-center gap-3">
                       {transaction.categories && (
@@ -335,23 +394,208 @@ const Dashboard = () => {
                         </p>
                       </div>
                     </div>
-                    <p
-                      className={`font-bold ${
-                        transaction.type === "income"
-                          ? "text-green-600"
-                          : "text-red-600"
-                      }`}
-                    >
-                      {transaction.type === "income" ? "+" : "-"}€
-                      {parseFloat(transaction.amount.toString()).toFixed(2)}
-                    </p>
+
+                    <div className="flex items-center gap-4">
+                      <p
+                        className={`font-bold ${
+                          transaction.type === "income"
+                            ? "text-green-600"
+                            : "text-red-600"
+                        }`}
+                      >
+                        {transaction.type === "income" ? "+" : "-"}€
+                        {parseFloat(transaction.amount.toString()).toFixed(2)}
+                      </p>
+
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleEditTransaction(transaction)}
+                        className="hover:bg-primary/10"
+                      >
+                        <Pencil className="w-4 h-4 text-primary" />
+                      </Button>
+
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setSelectedTransaction(transaction.id);
+                          setDeleteDialogOpen(true);
+                        }}
+                        className="hover:bg-primary/10"
+                      >
+                        <Trash2 className="w-4 h-4 text-primary" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
+
+              <Button
+                onClick={() => navigate("/transactions")}
+                variant="outline"
+                className="w-full mt-4"
+              >
+                Ver Mais
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
             </CardContent>
           </Card>
         )}
       </div>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar actividade?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta ação não pode ser revertida. A actividade será permanentemente
+              eliminada.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteTransaction}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Editar Actividade</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleUpdateTransaction} className="space-y-6">
+            {/* Type Selection */}
+            <div className="space-y-2">
+              <Label>Tipo</Label>
+              <div className="grid grid-cols-2 gap-4">
+                <Button
+                  type="button"
+                  variant={editFormData.type === "expense" ? "default" : "outline"}
+                  className="h-14"
+                  onClick={() =>
+                    setEditFormData((prev) => ({ ...prev, type: "expense" }))
+                  }
+                >
+                  Despesa
+                </Button>
+                <Button
+                  type="button"
+                  variant={editFormData.type === "income" ? "default" : "outline"}
+                  className="h-14"
+                  onClick={() =>
+                    setEditFormData((prev) => ({ ...prev, type: "income" }))
+                  }
+                >
+                  Rendimento
+                </Button>
+              </div>
+            </div>
+
+            {/* Description */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-description">
+                Descrição <span className="text-destructive">*</span>
+              </Label>
+              <Textarea
+                id="edit-description"
+                placeholder="Ex: Compras no supermercado"
+                value={editFormData.description}
+                onChange={(e) =>
+                  setEditFormData((prev) => ({
+                    ...prev,
+                    description: e.target.value,
+                  }))
+                }
+                rows={3}
+                required
+              />
+            </div>
+
+            {/* Amount */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-amount">
+                Valor (€) <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="edit-amount"
+                type="number"
+                step="0.01"
+                min="0.01"
+                placeholder="0.00"
+                value={editFormData.amount}
+                onChange={(e) =>
+                  setEditFormData((prev) => ({ ...prev, amount: e.target.value }))
+                }
+                required
+                className="text-lg"
+              />
+            </div>
+
+            {/* Category (only for expenses) */}
+            {editFormData.type === "expense" && (
+              <div className="space-y-2">
+                <Label htmlFor="edit-category">
+                  Categoria <span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  value={editFormData.category_id}
+                  onValueChange={(value) =>
+                    setEditFormData((prev) => ({ ...prev, category_id: value }))
+                  }
+                  required
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione uma categoria" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((category) => (
+                      <SelectItem key={category.id} value={category.id}>
+                        <div className="flex items-center gap-2">
+                          <span>{category.icon}</span>
+                          <span>{category.name}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Date */}
+            <div className="space-y-2">
+              <Label htmlFor="edit-date">Data</Label>
+              <Input
+                id="edit-date"
+                type="date"
+                value={editFormData.date}
+                onChange={(e) =>
+                  setEditFormData((prev) => ({ ...prev, date: e.target.value }))
+                }
+                required
+              />
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setEditDialogOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit">Guardar Alterações</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

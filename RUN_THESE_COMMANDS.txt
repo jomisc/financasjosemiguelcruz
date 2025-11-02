@@ -1,0 +1,61 @@
+====================================
+RUN THESE COMMANDS IN YOUR TERMINAL
+====================================
+
+Copy and paste these commands one by one in your terminal:
+
+# 1. Fix npm cache (will ask for password)
+sudo chown -R $(whoami) ~/.npm
+
+# 2. Install Docker Desktop (will ask for password)
+brew install --cask docker
+
+# 3. Start Docker Desktop
+open -a Docker
+
+# WAIT for Docker to fully start (whale icon in menu bar should be steady)
+# Then continue:
+
+# 4. Install backend dependencies
+cd /Users/ctw02526/vibecoding/financasjosemiguelcruz/server
+npm install
+cd ..
+
+# 5. Start PostgreSQL
+docker compose up -d
+
+# Wait 10 seconds for database initialization
+sleep 10
+
+# 6. Verify database is running
+docker compose logs postgres | tail -10
+
+====================================
+TO START THE APPLICATION
+====================================
+
+# Terminal 1 - Start Backend Server:
+cd /Users/ctw02526/vibecoding/financasjosemiguelcruz/server
+npm run dev
+
+# Terminal 2 - Start Frontend (open new terminal):
+cd /Users/ctw02526/vibecoding/financasjosemiguelcruz
+npm run dev
+
+# Then open in browser:
+# http://localhost:8081/
+
+====================================
+TROUBLESHOOTING
+====================================
+
+If "docker: command not found":
+- Make sure Docker Desktop is running (whale icon in menu bar)
+- Try: /Applications/Docker.app/Contents/Resources/bin/docker compose up -d
+
+If port already in use:
+- lsof -ti:3001 | xargs kill -9  # Kill backend
+- lsof -ti:8081 | xargs kill -9  # Kill frontend
+
+To stop database:
+docker compose down

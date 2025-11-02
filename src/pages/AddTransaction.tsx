@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -36,24 +36,11 @@ const AddTransaction = () => {
   });
 
   useEffect(() => {
-    checkAuth();
     loadCategories();
   }, []);
 
-  const checkAuth = async () => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (!session) {
-      navigate("/auth");
-    }
-  };
-
   const loadCategories = async () => {
-    const { data, error } = await supabase
-      .from("categories")
-      .select("*")
-      .order("name");
+    const { data, error } = await api.categories.getAll();
 
     if (error) {
       console.error("Error loading categories:", error);
@@ -65,6 +52,11 @@ const AddTransaction = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!formData.description || formData.description.trim() === "") {
+      toast.error("Por favor, insira uma descrição");
+      return;
+    }
 
     if (!formData.amount || parseFloat(formData.amount) <= 0) {
       toast.error("Por favor, insira um valor válido");
@@ -78,32 +70,21 @@ const AddTransaction = () => {
 
     setLoading(true);
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      toast.error("Utilizador não autenticado");
-      setLoading(false);
-      return;
-    }
-
-    const { error } = await supabase.from("transactions").insert({
-      user_id: user.id,
+    const { error } = await api.transactions.create({
       type: formData.type,
       amount: parseFloat(formData.amount),
       category_id: formData.type === "expense" ? formData.category_id : null,
       date: formData.date,
-      description: formData.description || null,
+      description: formData.description,
     });
 
     setLoading(false);
 
     if (error) {
       console.error("Error creating transaction:", error);
-      toast.error("Erro ao criar transação");
+      toast.error("Erro ao criar actividade");
     } else {
-      toast.success("Transação criada com sucesso!");
+      toast.success("Actividade criada com sucesso!");
       navigate("/dashboard");
     }
   };
@@ -130,7 +111,7 @@ const AddTransaction = () => {
       <div className="container mx-auto px-4 py-8 max-w-2xl">
         <Card>
           <CardHeader>
-            <CardTitle>Nova Transação</CardTitle>
+            <CardTitle>Nova Actividade</CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
@@ -159,6 +140,26 @@ const AddTransaction = () => {
                     Rendimento
                   </Button>
                 </div>
+              </div>
+
+              {/* Description */}
+              <div className="space-y-2">
+                <Label htmlFor="description">
+                  Descrição <span className="text-destructive">*</span>
+                </Label>
+                <Textarea
+                  id="description"
+                  placeholder="Ex: Compras no supermercado"
+                  value={formData.description}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      description: e.target.value,
+                    }))
+                  }
+                  rows={3}
+                  required
+                />
               </div>
 
               {/* Amount */}
@@ -225,23 +226,6 @@ const AddTransaction = () => {
                 />
               </div>
 
-              {/* Description */}
-              <div className="space-y-2">
-                <Label htmlFor="description">Descrição (opcional)</Label>
-                <Textarea
-                  id="description"
-                  placeholder="Ex: Compras no supermercado"
-                  value={formData.description}
-                  onChange={(e) =>
-                    setFormData((prev) => ({
-                      ...prev,
-                      description: e.target.value,
-                    }))
-                  }
-                  rows={3}
-                />
-              </div>
-
               {/* Submit Buttons */}
               <div className="flex gap-4">
                 <Button
@@ -253,7 +237,7 @@ const AddTransaction = () => {
                   Cancelar
                 </Button>
                 <Button type="submit" disabled={loading} className="flex-1">
-                  {loading ? "A guardar..." : "Guardar Transação"}
+                  {loading ? "A guardar..." : "Guardar Actividade"}
                 </Button>
               </div>
             </form>
